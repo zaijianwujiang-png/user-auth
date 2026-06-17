@@ -42,6 +42,9 @@ Resources:
         Me:
           Type: Api
           Properties: { Path: /me, Method: get }
+        ChangePassword:
+          Type: Api
+          Properties: { Path: /change-password, Method: post }
 
   # ---- 数据库表:Users ----
   UsersTable:

@@ -32,6 +32,11 @@ class EmailExists(Exception):
     pass
 
 
+class StalePassword(Exception):
+    """改密码时库里的旧哈希已变(并发改密),上层转成 409。〔change-password 并发安全〕"""
+    pass
+
+
 def get_user(email: str):
     """
     按邮箱读取用户。找到返回 dict,找不到返回 None。〔Req 2.1 / 3.1〕
@@ -63,6 +68,29 @@ def create_user(email: str, password_hash: str) -> dict:
             raise EmailExists(email)
         raise  # 其它错误原样抛出
     return item
+
+
+def update_password(email: str, new_hash: str, expected_hash: str) -> None:
+    """
+    更新指定用户的密码哈希。〔change-password F-005〕
+    用 update_item 只改 passwordHash,不动 createdAt 等其它字段。
+
+    并发安全(Codex P2):条件里带上"已验证的旧哈希 expected_hash",
+    做 compare-and-swap —— 只有库里当前哈希仍等于刚才验证过的那个才更新。
+    两个并发改密请求同时进来时,只有一个能成功,另一个的旧哈希已失效 → StalePassword,
+    避免"用过期旧密码覆盖了更新的密码"。
+    """
+    try:
+        _table().update_item(
+            Key={"email": email},
+            UpdateExpression="SET passwordHash = :h",
+            ConditionExpression="attribute_exists(email) AND passwordHash = :old",
+            ExpressionAttributeValues={":h": new_hash, ":old": expected_hash},
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            raise StalePassword(email)
+        raise
 
 
 def public_view(user: dict) -> dict:

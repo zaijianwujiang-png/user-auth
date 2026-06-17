@@ -138,3 +138,58 @@ def test_app_end_to_end(mocked_aws):
 
     assert call("/Prod/login", "OPTIONS")[0] == 200   # CORS 预检
     assert call("/Prod/nope", "GET")[0] == 404        # 未知路由
+
+
+# ---------------- change-password〔feature 2〕----------------
+
+def test_change_password_flow(mocked_aws):
+    """修改密码全链路 + 各失败分支。〔2.AC-001~AC-005〕"""
+    import handlers as h
+    h.handle_register({"email": "a@x.com", "password": "abc12345"})
+    token = h.handle_login({"email": "a@x.com", "password": "abc12345"})[1]["token"]
+    auth = {"Authorization": "Bearer " + token}
+
+    # 无 token → 401〔AC-002〕
+    assert h.handle_change_password({}, {"oldPassword": "abc12345", "newPassword": "xyz98765"})[0] == 401
+    # 旧密码错 → 401〔AC-003〕
+    assert h.handle_change_password(auth, {"oldPassword": "wrongpw1", "newPassword": "xyz98765"})[0] == 401
+    # 新密码弱 → 422〔AC-004〕
+    assert h.handle_change_password(auth, {"oldPassword": "abc12345", "newPassword": "weak"})[0] == 422
+    # 新旧相同 → 422〔AC-005〕
+    assert h.handle_change_password(auth, {"oldPassword": "abc12345", "newPassword": "abc12345"})[0] == 422
+
+    # 成功 → 200〔AC-001〕
+    assert h.handle_change_password(auth, {"oldPassword": "abc12345", "newPassword": "xyz98765"})[0] == 200
+    # 旧密码失效、新密码可登录
+    assert h.handle_login({"email": "a@x.com", "password": "abc12345"})[0] == 401
+    assert h.handle_login({"email": "a@x.com", "password": "xyz98765"})[0] == 200
+
+
+def test_change_password_stale_concurrent(mocked_aws):
+    """并发改密:用过期旧哈希做 compare-and-swap 必须失败。〔Codex P2〕"""
+    import store, security as sec
+    store.create_user("a@x.com", sec.hash_password("abc12345"))
+    user = store.get_user("a@x.com")
+    old_hash = user["passwordHash"]
+
+    # 第一个请求成功改密
+    store.update_password("a@x.com", sec.hash_password("xyz98765"), old_hash)
+
+    # 第二个并发请求拿着已失效的 old_hash → StalePassword
+    import pytest as _pytest
+    with _pytest.raises(store.StalePassword):
+        store.update_password("a@x.com", sec.hash_password("other123"), old_hash)
+
+
+def test_change_password_via_app(mocked_aws):
+    """通过 Lambda 入口验证路由接通。"""
+    import app
+    def call(path, method, body=None, headers=None):
+        r = app.lambda_handler(_event(path, method, body, headers), None)
+        return r["statusCode"], json.loads(r["body"])
+    call("/Prod/register", "POST", {"email": "a@x.com", "password": "abc12345"})
+    token = call("/Prod/login", "POST", {"email": "a@x.com", "password": "abc12345"})[1]["token"]
+    sc, b = call("/Prod/change-password", "POST",
+                 {"oldPassword": "abc12345", "newPassword": "xyz98765"},
+                 {"Authorization": "Bearer " + token})
+    assert sc == 200 and "message" in b

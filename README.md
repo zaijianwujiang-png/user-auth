@@ -34,6 +34,7 @@
 | POST | `/register` | 注册 `{email, password}` |
 | POST | `/login` | 登录,返回 `{token}` |
 | GET  | `/me` | 当前用户(需 `Authorization: Bearer <token>`) |
+| POST | `/change-password` | 修改密码(需登录,`{oldPassword, newPassword}`) |
 
 ## 本地测试
 

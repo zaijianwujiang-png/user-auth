@@ -67,22 +67,30 @@ def handle_login(body: dict):
     return 200, {"token": token}
 
 
+def _email_from_headers(headers: dict):
+    """
+    从 Authorization 头解析出已认证用户的 email。〔Req 3.2/3.3〕
+    成功返回 email;无 token / 格式错 / token 无效或过期 → 返回 None。
+    handle_me 和 handle_change_password 共用,避免重复。
+    """
+    # HTTP 头大小写不敏感,做个兼容
+    auth = headers.get("Authorization") or headers.get("authorization") or ""
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth[len("Bearer "):].strip()
+    try:
+        return sec.parse_token(token)
+    except sec.AuthError:
+        return None
+
+
 def handle_me(headers: dict):
     """
     当前用户:从 Authorization 头取 token -> 校验 -> 返回信息。〔Req 3.1-3.3〕
     """
-    # HTTP 头大小写不敏感,做个兼容
-    auth = headers.get("Authorization") or headers.get("authorization") or ""
-
-    # 期望格式: "Bearer <token>"
-    if not auth.startswith("Bearer "):
-        return 401, {"error": "未认证"}  # 〔Req 3.2〕
-    token = auth[len("Bearer "):].strip()
-
-    try:
-        email = sec.parse_token(token)  # 〔Req 3.3〕
-    except sec.AuthError:
-        return 401, {"error": "未认证"}
+    email = _email_from_headers(headers)
+    if email is None:
+        return 401, {"error": "未认证"}  # 〔Req 3.2/3.3〕
 
     user = store.get_user(email)
     if user is None:
@@ -90,3 +98,35 @@ def handle_me(headers: dict):
         return 401, {"error": "未认证"}
 
     return 200, store.public_view(user)  # 〔Req 3.1〕
+
+
+def handle_change_password(headers: dict, body: dict):
+    """
+    修改密码:验 token -> 验旧密码 -> 校验新密码 -> 更新。〔change-password F-001~F-006〕
+    """
+    email = _email_from_headers(headers)
+    if email is None:
+        return 401, {"error": "未认证"}  # 〔F-002〕
+
+    old = body.get("oldPassword")
+    new = body.get("newPassword")
+    if not old or not new:
+        return 422, {"error": "旧密码和新密码不能为空"}
+
+    user = store.get_user(email)
+    # 用户不存在 或 旧密码不匹配 → 统一 401(不泄露细节)〔F-003〕
+    if user is None or not sec.verify_password(old, user["passwordHash"]):
+        return 401, {"error": "旧密码错误"}
+
+    if not v.is_strong_password(new):  # 〔F-004〕
+        return 422, {"error": "密码至少8位且含字母和数字", "field": "newPassword"}
+
+    if old == new:  # 〔F-006〕
+        return 422, {"error": "新密码不能与旧密码相同"}
+
+    # 带上已验证的旧哈希做 compare-and-swap,防并发改密的覆盖竞态〔Codex P2〕
+    try:
+        store.update_password(email, sec.hash_password(new), user["passwordHash"])
+    except store.StalePassword:
+        return 409, {"error": "密码刚被修改过,请重新登录后再试"}
+    return 200, {"message": "密码已更新"}

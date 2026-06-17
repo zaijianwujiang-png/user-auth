@@ -60,6 +60,8 @@ def lambda_handler(event, context):
             status, body = handlers.handle_login(_parse_body(event))
         elif path.endswith("/me") and method == "GET":
             status, body = handlers.handle_me(headers)
+        elif path.endswith("/change-password") and method == "POST":
+            status, body = handlers.handle_change_password(headers, _parse_body(event))
         else:
             status, body = 404, {"error": "接口不存在"}
 

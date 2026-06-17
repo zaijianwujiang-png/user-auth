@@ -44,6 +44,13 @@
     <button class="ghost" onclick="logout()">退出</button>
   </fieldset>
 
+  <fieldset>
+    <legend>④ 修改密码(需先登录)</legend>
+    <input id="oldPw" type="password" placeholder="旧密码">
+    <input id="newPw" type="password" placeholder="新密码(至少8位,含字母和数字)">
+    <button onclick="changePassword()">修改密码</button>
+  </fieldset>
+
   <div id="result">(结果会显示在这里)</div>
 
   <script>
@@ -99,6 +106,16 @@
         const r = await api("/me", "GET");
         if (r.ok) show("✅ 我的信息:\n" + JSON.stringify(r.data, null, 2), "ok");
         else show("❌ 获取失败(可能未登录或令牌过期):" + (r.data.error || r.status), "err");
+      } catch (e) { show("请求出错:" + e.message, "err"); }
+    }
+
+    async function changePassword() {
+      if (!getToken()) return show("请先登录。", "err");
+      show("修改中...");
+      try {
+        const r = await api("/change-password", "POST", { oldPassword: $("oldPw"), newPassword: $("newPw") });
+        if (r.ok) show("✅ " + (r.data.message || "密码已更新") + "\n下次请用新密码登录。", "ok");
+        else show("❌ 修改失败:" + (r.data.error || r.status), "err");
       } catch (e) { show("请求出错:" + e.message, "err"); }
     }
 
