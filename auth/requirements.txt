@@ -1,0 +1,4 @@
+# 后端函数的第三方依赖
+# boto3(操作 DynamoDB)由 Lambda 运行时自带,不用写在这里
+bcrypt        # 给密码加盐哈希(单向加密)
+PyJWT         # 签发和校验登录令牌(JWT)

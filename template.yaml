@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: user-auth v1 - 用户注册/登录/当前用户 (Lambda + API Gateway + DynamoDB)
+
+# Parameters: 部署时可传入的参数
+Parameters:
+  JwtSecret:
+    Type: String
+    NoEcho: true            # 不在日志/控制台里回显(这是密钥)
+    Default: dev-secret-change-me-0123456789abcdef
+    Description: JWT 签名密钥,生产环境务必用 --parameter-overrides 传入随机强密钥(>=32字节)
+
+# Globals: 所有函数共用的默认设置
+Globals:
+  Function:
+    Timeout: 10
+    MemorySize: 128
+    Runtime: python3.12
+
+Resources:
+  # ---- 后端函数:一个函数处理 3 个接口 ----
+  AuthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: auth/                 # 代码在 auth/ 文件夹
+      Handler: app.lambda_handler    # 入口 = app.py 的 lambda_handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref UsersTable   # 把表名传给代码(store.py 读它)
+          JWT_SECRET: !Ref JwtSecret    # 把密钥传给代码(security.py 读它)
+      Policies:
+        # 给函数授予对 Users 表的增删改查权限〔§6〕
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+      Events:
+        Register:
+          Type: Api
+          Properties: { Path: /register, Method: post }
+        Login:
+          Type: Api
+          Properties: { Path: /login, Method: post }
+        Me:
+          Type: Api
+          Properties: { Path: /me, Method: get }
+
+  # ---- 数据库表:Users ----
+  UsersTable:
+    Type: AWS::Serverless::SimpleTable   # 简化版 DynamoDB 表声明
+    Properties:
+      PrimaryKey:
+        Name: email                      # 主键 = 邮箱〔§3〕
+        Type: String
+      # 按用量计费,没人用就不花钱(SimpleTable 默认即按需)
+
+Outputs:
+  ApiBaseUrl:
+    Description: "前端要用的 API 根网址(后面接 /register /login /me)"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"

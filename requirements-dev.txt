@@ -1,0 +1,6 @@
+# 本地开发/测试用依赖(部署到 Lambda 不需要这些)
+bcrypt
+PyJWT
+boto3
+pytest
+moto[dynamodb]

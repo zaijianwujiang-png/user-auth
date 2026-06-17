@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用户登录注册 演示</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 50px auto; padding: 0 20px; }
+    h1 { font-size: 22px; }
+    fieldset { border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; padding: 16px; }
+    legend { font-weight: 600; padding: 0 6px; }
+    input { width: 100%; box-sizing: border-box; font-size: 15px; padding: 9px; margin: 6px 0; border: 1px solid #ccc; border-radius: 6px; }
+    button { font-size: 15px; padding: 9px 18px; cursor: pointer; border: 0; border-radius: 6px; background: #2563eb; color: #fff; }
+    button.ghost { background: #eee; color: #333; }
+    #result { margin-top: 16px; padding: 14px; background: #f4f4f4; border-radius: 8px; white-space: pre-wrap; min-height: 20px; font-size: 14px; }
+    .err { color: #c00; }
+    .ok { color: #080; }
+    .token { font-size: 12px; color: #666; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>用户登录注册演示</h1>
+
+  <!-- 第 2 步部署后,把 Outputs 里的 ApiBaseUrl 填到这里 -->
+  <p class="token">当前 API: <span id="apiLabel"></span></p>
+
+  <fieldset>
+    <legend>① 注册</legend>
+    <input id="regEmail" type="email" placeholder="邮箱,如 a@x.com">
+    <input id="regPw" type="password" placeholder="密码(至少8位,含字母和数字)">
+    <button onclick="register()">注册</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>② 登录</legend>
+    <input id="loginEmail" type="email" placeholder="邮箱">
+    <input id="loginPw" type="password" placeholder="密码">
+    <button onclick="login()">登录</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>③ 我的信息(需先登录)</legend>
+    <button class="ghost" onclick="me()">查看我的信息</button>
+    <button class="ghost" onclick="logout()">退出</button>
+  </fieldset>
+
+  <div id="result">(结果会显示在这里)</div>
+
+  <script>
+    // ====== 配置:部署后把这里换成你的 ApiBaseUrl ======
+    const API_BASE = "https://你的接口地址.execute-api.us-east-1.amazonaws.com/Prod";
+    document.getElementById("apiLabel").textContent = API_BASE;
+
+    const result = document.getElementById("result");
+    const $ = (id) => document.getElementById(id).value.trim();
+
+    // token 存在 localStorage,刷新页面也还在〔§7〕
+    const saveToken = (t) => localStorage.setItem("auth_token", t);
+    const getToken  = () => localStorage.getItem("auth_token");
+
+    function show(text, cls = "") { result.className = cls; result.textContent = text; }
+
+    // 统一的请求函数:自动带 token、自动解析 JSON
+    async function api(path, method, body) {
+      const headers = { "Content-Type": "application/json" };
+      const token = getToken();
+      if (token) headers["Authorization"] = "Bearer " + token;
+      const resp = await fetch(API_BASE + path, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const data = await resp.json();
+      return { ok: resp.ok, status: resp.status, data };
+    }
+
+    async function register() {
+      show("注册中...");
+      try {
+        const r = await api("/register", "POST", { email: $("regEmail"), password: $("regPw") });
+        if (r.ok) show("✅ 注册成功!现在可以去登录了。\n" + JSON.stringify(r.data.user, null, 2), "ok");
+        else show("❌ 注册失败:" + (r.data.error || r.status), "err");
+      } catch (e) { show("请求出错:" + e.message, "err"); }
+    }
+
+    async function login() {
+      show("登录中...");
+      try {
+        const r = await api("/login", "POST", { email: $("loginEmail"), password: $("loginPw") });
+        if (r.ok) { saveToken(r.data.token); show("✅ 登录成功!令牌已保存。\n现在可以点【查看我的信息】。", "ok"); }
+        else show("❌ 登录失败:" + (r.data.error || r.status), "err");
+      } catch (e) { show("请求出错:" + e.message, "err"); }
+    }
+
+    async function me() {
+      if (!getToken()) return show("请先登录。", "err");
+      show("获取中...");
+      try {
+        const r = await api("/me", "GET");
+        if (r.ok) show("✅ 我的信息:\n" + JSON.stringify(r.data, null, 2), "ok");
+        else show("❌ 获取失败(可能未登录或令牌过期):" + (r.data.error || r.status), "err");
+      } catch (e) { show("请求出错:" + e.message, "err"); }
+    }
+
+    function logout() { localStorage.removeItem("auth_token"); show("已退出(本地令牌已清除)。"); }
+  </script>
+</body>
+</html>

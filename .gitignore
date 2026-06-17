@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# AWS SAM 构建产物
+.aws-sam/
+samconfig.toml
+
+# 依赖
+node_modules/
+
+# 系统/编辑器
+.DS_Store
+*.swp
+.idea/
+.vscode/
