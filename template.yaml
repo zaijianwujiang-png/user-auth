@@ -12,6 +12,13 @@ Parameters:
 
 # Globals: 所有函数共用的默认设置
 Globals:
+  # API Gateway 全局开启 CORS —— 自动给每个路由建 OPTIONS 预检处理,
+  # 否则浏览器的跨域预检(OPTIONS)会被 403 拒绝,前端报 "Failed to fetch"
+  Api:
+    Cors:
+      AllowMethods: "'GET,POST,OPTIONS'"
+      AllowHeaders: "'Content-Type,Authorization'"
+      AllowOrigin: "'*'"
   Function:
     Timeout: 10
     MemorySize: 128
