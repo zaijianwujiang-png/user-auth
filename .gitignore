@@ -16,3 +16,5 @@ node_modules/
 *.swp
 .idea/
 .vscode/
+.venv312/
+workflows/
