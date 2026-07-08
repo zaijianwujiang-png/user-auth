@@ -9,6 +9,18 @@ Parameters:
     NoEcho: true            # 不在日志/控制台里回显(这是密钥)
     Default: dev-secret-change-me-0123456789abcdef
     Description: JWT 签名密钥,生产环境务必用 --parameter-overrides 传入随机强密钥(>=32字节)
+  AnthropicApiKey:
+    Type: String
+    NoEcho: true
+    Description: Claude API key(信号提取/交叉验证/事实核查),部署时用 --parameter-overrides 传入
+  TelegramBotToken:
+    Type: String
+    NoEcho: true
+    Description: Telegram Bot token(信号与告警推送)
+  TelegramChatId:
+    Type: String
+    NoEcho: true
+    Description: 接收推送的 Telegram chat id
 
 # Globals: 所有函数共用的默认设置
 Globals:
@@ -52,6 +64,47 @@ Resources:
         ChangePassword:
           Type: Api
           Properties: { Path: /change-password, Method: post }
+
+  # ---- 大V信号:定时采集/验证/通知函数(specs/3.trump-signal-trader)----
+  SignalFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: signal/
+      Handler: app.lambda_handler
+      # 事实核查用 web search 可能较慢,单独放宽超时(见 tasks.md 风险点)
+      Timeout: 120
+      MemorySize: 256
+      # 每分钟触发 + 120s 超时可能重叠执行,限并发 1 彻底消除竞态(review 建议)
+      ReservedConcurrentExecutions: 1
+      Environment:
+        Variables:
+          SIGNAL_TABLE_NAME: !Ref SignalTable
+          ANTHROPIC_API_KEY: !Ref AnthropicApiKey
+          TELEGRAM_BOT_TOKEN: !Ref TelegramBotToken
+          TELEGRAM_CHAT_ID: !Ref TelegramChatId
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalTable
+      Events:
+        Poll:
+          Type: Schedule            # EventBridge 定时触发,每分钟跑一轮 pipeline
+          Properties:
+            Schedule: rate(1 minute)
+
+  # ---- 大V信号表:单表设计(帖子/决策记录/哈希索引/源状态)----
+  SignalTable:
+    Type: AWS::DynamoDB::Table     # SimpleTable 不支持组合主键与 TTL,用完整声明
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
 
   # ---- 数据库表:Users ----
   UsersTable:
