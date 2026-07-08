@@ -74,8 +74,9 @@ Resources:
       # 事实核查用 web search 可能较慢,单独放宽超时(见 tasks.md 风险点)
       Timeout: 120
       MemorySize: 256
-      # 每分钟触发 + 120s 超时可能重叠执行,限并发 1 彻底消除竞态(review 建议)
-      ReservedConcurrentExecutions: 1
+      # 注:曾按 review 建议加 ReservedConcurrentExecutions: 1 防执行重叠,但本账号
+      # Lambda 并发配额过低(预留 1 会使非预留并发低于最小值 5)被拒,已移除;
+      # 重叠执行的竞态由 DynamoDB 条件写(帖子 ID/内容哈希幂等)兜底,不会重复发信号
       Environment:
         Variables:
           SIGNAL_TABLE_NAME: !Ref SignalTable
